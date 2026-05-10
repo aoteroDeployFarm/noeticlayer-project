@@ -1,0 +1,20 @@
+[project]
+name = "noeticlayer"
+version = "0.1.0"
+description = "Persistent cognition infrastructure for agents and business operations."
+requires-python = ">=3.11"
+
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "psycopg[binary]",
+  "pgvector",
+  "pydantic",
+  "python-dotenv",
+  "openai"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["core/tests", "mcp/tests", "runtime/tests", "agents/tests", "sync/tests"]
+

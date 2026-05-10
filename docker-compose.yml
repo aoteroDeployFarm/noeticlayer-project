@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: noeticlayer-postgres
+    environment:
+      POSTGRES_USER: noetic
+      POSTGRES_PASSWORD: noetic
+      POSTGRES_DB: noeticlayer
+    ports:
+      - "5432:5432"
+    volumes:
+      - noeticlayer_pgdata:/var/lib/postgresql/data
+
+volumes:
+  noeticlayer_pgdata:
+
