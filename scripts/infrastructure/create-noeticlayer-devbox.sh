@@ -1,113 +1,122 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROJECT_ID="regulatory-monitor-ai"
+ZONE="us-central1-a"
+VM_NAME="noeticlayer-devbox"
+REGION="us-central1"
+MACHINE_TYPE="e2-medium"
+BOOT_DISK_SIZE="50GB"
+BOOT_DISK_TYPE="pd-balanced"
+VPC_NAME="noeticlayer-vpc"
+SUBNET_NAME="noeticlayer-subnet-us-central1"
+SSH_FIREWALL_RULE="noeticlayer-allow-ssh"
+
 echo ""
 echo "========================================="
 echo " NoeticLayer GCP Dev Box Provisioner"
 echo "========================================="
 echo ""
 
-read -rp "GCP Project ID: " PROJECT_ID
+read -rp "GCP Project ID [${PROJECT_ID}]: " INPUT_PROJECT
+PROJECT_ID=${INPUT_PROJECT:-$PROJECT_ID}
 
-read -rp "VM Name [noeticlayer-devbox]: " VM_NAME
-VM_NAME=${VM_NAME:-noeticlayer-devbox}
+read -rp "VM Name [${VM_NAME}]: " INPUT_VM
+VM_NAME=${INPUT_VM:-$VM_NAME}
 
-read -rp "Region [us-central1]: " REGION
-REGION=${REGION:-us-central1}
+read -rp "Region [${REGION}]: " INPUT_REGION
+REGION=${INPUT_REGION:-$REGION}
 
-read -rp "Zone [us-central1-a]: " ZONE
-ZONE=${ZONE:-us-central1-a}
+read -rp "Zone [${ZONE}]: " INPUT_ZONE
+ZONE=${INPUT_ZONE:-$ZONE}
 
-read -rp "Machine Type [e2-medium]: " MACHINE_TYPE
-MACHINE_TYPE=${MACHINE_TYPE:-e2-medium}
+read -rp "Machine Type [${MACHINE_TYPE}]: " INPUT_MACHINE
+MACHINE_TYPE=${INPUT_MACHINE:-$MACHINE_TYPE}
 
-read -rp "Boot Disk Size [50GB]: " BOOT_DISK_SIZE
-BOOT_DISK_SIZE=${BOOT_DISK_SIZE:-50GB}
+read -rp "Boot Disk Size [${BOOT_DISK_SIZE}]: " INPUT_DISK_SIZE
+BOOT_DISK_SIZE=${INPUT_DISK_SIZE:-$BOOT_DISK_SIZE}
 
-read -rp "Boot Disk Type [pd-balanced]: " BOOT_DISK_TYPE
-BOOT_DISK_TYPE=${BOOT_DISK_TYPE:-pd-balanced}
+read -rp "Boot Disk Type [${BOOT_DISK_TYPE}]: " INPUT_DISK_TYPE
+BOOT_DISK_TYPE=${INPUT_DISK_TYPE:-$BOOT_DISK_TYPE}
 
-read -rp "VPC Name [noeticlayer-vpc]: " VPC_NAME
-VPC_NAME=${VPC_NAME:-noeticlayer-vpc}
+read -rp "VPC Name [${VPC_NAME}]: " INPUT_VPC
+VPC_NAME=${INPUT_VPC:-$VPC_NAME}
 
-read -rp "Subnet Name [noeticlayer-subnet-us-central1]: " SUBNET_NAME
-SUBNET_NAME=${SUBNET_NAME:-noeticlayer-subnet-us-central1}
-
-echo ""
-echo "Detecting current public IP for SSH restriction..."
-CURRENT_IP="$(curl -s https://ifconfig.me || true)"
-
-read -rp "Allowed SSH Source CIDR [${CURRENT_IP}/32]: " SSH_SOURCE_CIDR
-SSH_SOURCE_CIDR=${SSH_SOURCE_CIDR:-${CURRENT_IP}/32}
+read -rp "Subnet Name [${SUBNET_NAME}]: " INPUT_SUBNET
+SUBNET_NAME=${INPUT_SUBNET:-$SUBNET_NAME}
 
 IMAGE_FAMILY="ubuntu-2204-lts"
 IMAGE_PROJECT="ubuntu-os-cloud"
-
 NETWORK_TAGS="noeticlayer-devbox,ssh"
 
 echo ""
 echo "Provisioning Configuration"
 echo "-----------------------------------------"
-echo "Project ID:        ${PROJECT_ID}"
-echo "VM Name:           ${VM_NAME}"
-echo "Region:            ${REGION}"
-echo "Zone:              ${ZONE}"
-echo "Machine Type:      ${MACHINE_TYPE}"
-echo "Disk Size:         ${BOOT_DISK_SIZE}"
-echo "Disk Type:         ${BOOT_DISK_TYPE}"
-echo "VPC:               ${VPC_NAME}"
-echo "Subnet:            ${SUBNET_NAME}"
-echo "SSH Source CIDR:   ${SSH_SOURCE_CIDR}"
+echo "Project ID:     ${PROJECT_ID}"
+echo "VM Name:        ${VM_NAME}"
+echo "Region:         ${REGION}"
+echo "Zone:           ${ZONE}"
+echo "Machine Type:   ${MACHINE_TYPE}"
+echo "Disk Size:      ${BOOT_DISK_SIZE}"
+echo "Disk Type:      ${BOOT_DISK_TYPE}"
+echo "VPC:            ${VPC_NAME}"
+echo "Subnet:         ${SUBNET_NAME}"
+echo "Firewall Rule:  ${SSH_FIREWALL_RULE}"
+echo "OS Login:       TRUE"
 echo ""
 
 read -rp "Continue? (y/n): " CONFIRM
-
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
   echo "Provisioning cancelled."
   exit 1
 fi
 
+echo ""
 echo "Setting active project..."
 gcloud config set project "${PROJECT_ID}"
 
+echo ""
 echo "Enabling required APIs..."
 gcloud services enable \
   compute.googleapis.com \
   cloudresourcemanager.googleapis.com \
   iam.googleapis.com
 
+echo ""
 echo "Validating VPC..."
-if ! gcloud compute networks describe "${VPC_NAME}" >/dev/null 2>&1; then
-  echo "ERROR: VPC not found: ${VPC_NAME}"
-  echo "Run scripts/infrastructure/create-noeticlayer-vpc.sh first."
-  exit 1
-fi
+gcloud compute networks describe "${VPC_NAME}" \
+  --project="${PROJECT_ID}" >/dev/null
 
 echo "Validating subnet..."
-if ! gcloud compute networks subnets describe "${SUBNET_NAME}" \
-  --region="${REGION}" >/dev/null 2>&1; then
-  echo "ERROR: Subnet not found: ${SUBNET_NAME} in ${REGION}"
+gcloud compute networks subnets describe "${SUBNET_NAME}" \
+  --project="${PROJECT_ID}" \
+  --region="${REGION}" >/dev/null
+
+echo "Validating SSH firewall rule..."
+if gcloud compute firewall-rules describe "${SSH_FIREWALL_RULE}" \
+  --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  echo "Firewall rule exists: ${SSH_FIREWALL_RULE}"
+  echo "Skipping firewall changes."
+else
+  echo "ERROR: Firewall rule missing: ${SSH_FIREWALL_RULE}"
   echo "Run scripts/infrastructure/create-noeticlayer-vpc.sh first."
   exit 1
 fi
 
-echo "Creating or updating restricted SSH firewall rule..."
-if gcloud compute firewall-rules describe noeticlayer-allow-ssh >/dev/null 2>&1; then
-  gcloud compute firewall-rules update noeticlayer-allow-ssh \
-    --source-ranges="${SSH_SOURCE_CIDR}" \
-    --allow=tcp:22 \
-    --target-tags=ssh
-else
-  gcloud compute firewall-rules create noeticlayer-allow-ssh \
-    --network="${VPC_NAME}" \
-    --allow=tcp:22 \
-    --source-ranges="${SSH_SOURCE_CIDR}" \
-    --target-tags=ssh \
-    --description="Allow restricted SSH access to NoeticLayer dev box"
+echo ""
+echo "Checking whether VM already exists..."
+if gcloud compute instances describe "${VM_NAME}" \
+  --project="${PROJECT_ID}" \
+  --zone="${ZONE}" >/dev/null 2>&1; then
+  echo "ERROR: VM already exists: ${VM_NAME}"
+  echo "Delete it first or use scripts/infrastructure/recreate-noeticlayer-devbox.sh"
+  exit 1
 fi
 
-echo "Creating NoeticLayer dev VM..."
+echo ""
+echo "Creating NoeticLayer dev VM with OS Login enabled..."
 gcloud compute instances create "${VM_NAME}" \
+  --project="${PROJECT_ID}" \
   --zone="${ZONE}" \
   --machine-type="${MACHINE_TYPE}" \
   --boot-disk-size="${BOOT_DISK_SIZE}" \
@@ -117,7 +126,7 @@ gcloud compute instances create "${VM_NAME}" \
   --network="${VPC_NAME}" \
   --subnet="${SUBNET_NAME}" \
   --tags="${NETWORK_TAGS}" \
-  --metadata=startup-script='#!/usr/bin/env bash
+  --metadata=enable-oslogin=TRUE,startup-script='#!/usr/bin/env bash
 set -euo pipefail
 
 apt-get update
@@ -132,7 +141,12 @@ apt-get install -y \
   python3-venv \
   postgresql \
   postgresql-contrib \
-  postgresql-server-dev-all
+  postgresql-server-dev-all \
+  google-compute-engine-oslogin \
+  google-guest-agent
+
+systemctl enable google-guest-agent || true
+systemctl restart google-guest-agent || true
 
 cd /tmp
 if [ ! -d pgvector ]; then
@@ -167,7 +181,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 SQL
 
 mkdir -p /opt/noeticlayer
-chmod 755 /opt/noeticlayer
+chmod 775 /opt/noeticlayer
 
 echo "NoeticLayer dev box startup complete."
 '
@@ -175,8 +189,8 @@ echo "NoeticLayer dev box startup complete."
 echo ""
 echo "Dev box creation requested."
 echo ""
-echo "Verify with:"
-echo "gcloud compute instances list"
+echo "Register your SSH key if needed:"
+echo "gcloud compute os-login ssh-keys add --key-file=\"\$HOME/.ssh/google_compute_engine.pub\" --project=${PROJECT_ID}"
 echo ""
 echo "Connect with:"
-echo "gcloud compute ssh ${VM_NAME} --zone=${ZONE}"
+echo "gcloud compute ssh ${VM_NAME} --project=${PROJECT_ID} --zone=${ZONE}"
