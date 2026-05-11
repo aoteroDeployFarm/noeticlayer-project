@@ -1,0 +1,11 @@
+ALTER TABLE memory_items
+ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id);
+
+ALTER TABLE memory_items
+ADD COLUMN IF NOT EXISTS title TEXT;
+
+ALTER TABLE memory_items
+ADD COLUMN IF NOT EXISTS raw_content TEXT;
+
+ALTER TABLE memory_items
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
