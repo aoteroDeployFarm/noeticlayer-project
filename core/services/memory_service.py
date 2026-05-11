@@ -6,6 +6,7 @@ from uuid import UUID
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 from pgvector.psycopg import register_vector
 
 from core.services.chunking_service import SimpleTextChunker
@@ -67,14 +68,21 @@ def capture_memory(
                     metadata
                 )
                 VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, workspace_id, type, title, raw_content, metadata, created_at;
+                RETURNING
+                    id,
+                    workspace_id,
+                    type,
+                    title,
+                    raw_content,
+                    metadata,
+                    created_at;
                 """,
                 (
                     str(workspace_id),
                     memory_type,
                     title,
                     raw_content,
-                    metadata or {},
+                    Json(metadata or {}),
                 ),
             )
 
@@ -96,7 +104,8 @@ def capture_memory(
                         embedding_model,
                         embedding_dimensions,
                         embedding_generated_at,
-                        token_estimate
+                        token_estimate,
+                        metadata
                     )
                     VALUES (
                         %s,
@@ -107,6 +116,7 @@ def capture_memory(
                         %s,
                         %s,
                         now(),
+                        %s,
                         %s
                     )
                     RETURNING
@@ -119,6 +129,7 @@ def capture_memory(
                         embedding_dimensions,
                         embedding_generated_at,
                         token_estimate,
+                        metadata,
                         created_at;
                     """,
                     (
@@ -130,6 +141,7 @@ def capture_memory(
                         embedding.model,
                         embedding.dimensions,
                         chunk.token_estimate,
+                        Json({}),
                     ),
                 )
 
@@ -233,6 +245,7 @@ def semantic_search_memory(
 
     provider = embedding_provider or get_embedding_provider()
     query_embedding = provider.embed_text(query)
+    query_vector = _to_vector_literal(query_embedding.vector)
 
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -266,10 +279,10 @@ def semantic_search_memory(
                 LIMIT %s;
                 """,
                 (
-                    _to_vector_literal(query_embedding.vector),
-                    _to_vector_literal(query_embedding.vector),
+                    query_vector,
+                    query_vector,
                     str(workspace_id),
-                    _to_vector_literal(query_embedding.vector),
+                    query_vector,
                     limit,
                 ),
             )
@@ -295,6 +308,7 @@ def get_memory_chunks(
                     embedding_dimensions,
                     embedding_generated_at,
                     token_estimate,
+                    metadata,
                     created_at
                 FROM memory_chunks
                 WHERE memory_item_id = %s
