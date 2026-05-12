@@ -1,4 +1,3 @@
-from core.services.embedding_provider import DeterministicFakeEmbeddingProvider
 from core.services.memory_service import (
     capture_memory,
     get_memory_chunks,
@@ -10,8 +9,6 @@ WORKSPACE_ID = "25cbd6eb-5aca-4cef-b519-90d58b5b86e5"
 
 
 def main():
-    embedding_provider = DeterministicFakeEmbeddingProvider()
-
     print("\n--- Capturing Chunked Semantic Memory ---")
 
     result = capture_memory(
@@ -33,7 +30,6 @@ def main():
             "source": "test_semantic_memory_service",
             "test_type": "chunked_semantic_retrieval",
         },
-        embedding_provider=embedding_provider,
     )
 
     memory_item = result["memory_item"]
@@ -58,11 +54,6 @@ def main():
     print(f"Chunk count: {len(chunks)}")
 
     for chunk in chunks:
-        if chunk["embedding_model"] != "fake-deterministic-1536":
-            raise AssertionError(
-                f"Unexpected embedding model: {chunk['embedding_model']}"
-            )
-
         if chunk["embedding_dimensions"] != 1536:
             raise AssertionError(
                 f"Unexpected embedding dimensions: {chunk['embedding_dimensions']}"
@@ -84,7 +75,6 @@ def main():
         workspace_id=WORKSPACE_ID,
         query="How should agents retrieve precise memory context?",
         limit=5,
-        embedding_provider=embedding_provider,
     )
 
     if not search_results:
@@ -98,6 +88,7 @@ def main():
             {
                 "title": row["title"],
                 "chunk_index": row["chunk_index"],
+                "embedding_model": row["embedding_model"],
                 "similarity_score": row["similarity_score"],
                 "chunk_content": row["chunk_content"][:180],
             }
