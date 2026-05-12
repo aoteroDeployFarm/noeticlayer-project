@@ -2,3 +2,6 @@ psycopg[binary]
 pgvector
 openai
 python-dotenv
+fastapi
+uvicorn[standard]
+pydantic
