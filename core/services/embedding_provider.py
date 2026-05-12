@@ -4,6 +4,10 @@ import os
 from dataclasses import dataclass
 from typing import Protocol
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 @dataclass(frozen=True)
 class EmbeddingResult:
@@ -25,7 +29,11 @@ class DeterministicFakeEmbeddingProvider:
     Do not use for production semantic quality.
     """
 
-    def __init__(self, dimensions: int = 1536, model: str = "fake-deterministic-1536"):
+    def __init__(
+        self,
+        dimensions: int = 1536,
+        model: str = "fake-deterministic-1536",
+    ):
         self.dimensions = dimensions
         self.model = model
 
@@ -35,11 +43,16 @@ class DeterministicFakeEmbeddingProvider:
 
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         seed = int(digest[:16], 16)
+
         rng = random.Random(seed)
 
-        vector = [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)]
+        vector = [
+            rng.uniform(-1.0, 1.0)
+            for _ in range(self.dimensions)
+        ]
 
         magnitude = sum(x * x for x in vector) ** 0.5
+
         if magnitude > 0:
             vector = [x / magnitude for x in vector]
 
@@ -54,21 +67,30 @@ class OpenAIEmbeddingProvider:
     """
     OpenAI embedding provider.
 
-    Requires:
-        pip install openai
+    Environment variables:
 
-    Environment:
-        OPENAI_API_KEY
-        OPENAI_EMBEDDING_MODEL defaults to text-embedding-3-small
+    OPENAI_API_KEY
+    EMBEDDING_MODEL=text-embedding-3-small
     """
 
     def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        self.model = model or os.getenv(
+            "EMBEDDING_MODEL",
+            "text-embedding-3-small",
+        )
 
     def embed_text(self, text: str) -> EmbeddingResult:
         from openai import OpenAI
 
-        client = OpenAI()
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY environment variable is not set."
+            )
+
+        client = OpenAI(api_key=api_key)
+
         response = client.embeddings.create(
             model=self.model,
             input=text,
@@ -84,7 +106,10 @@ class OpenAIEmbeddingProvider:
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    provider = os.getenv("NOETICLAYER_EMBEDDING_PROVIDER", "fake").lower().strip()
+    provider = os.getenv(
+        "EMBEDDING_PROVIDER",
+        "fake",
+    ).lower().strip()
 
     if provider == "openai":
         return OpenAIEmbeddingProvider()
@@ -92,4 +117,6 @@ def get_embedding_provider() -> EmbeddingProvider:
     if provider == "fake":
         return DeterministicFakeEmbeddingProvider()
 
-    raise ValueError(f"Unsupported embedding provider: {provider}")
+    raise ValueError(
+        f"Unsupported embedding provider: {provider}"
+    )
