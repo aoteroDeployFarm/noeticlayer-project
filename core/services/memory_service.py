@@ -5,12 +5,16 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from dotenv import load_dotenv
+from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
-from pgvector.psycopg import register_vector
 
 from core.services.chunking_service import SimpleTextChunker
 from core.services.embedding_provider import EmbeddingProvider, get_embedding_provider
+
+
+load_dotenv()
 
 
 DATABASE_URL = os.getenv(
@@ -87,7 +91,6 @@ def capture_memory(
             )
 
             memory_item = cur.fetchone()
-
             inserted_chunks = []
 
             for chunk in chunks:
@@ -232,9 +235,13 @@ def semantic_search_memory(
     query: str,
     limit: int = 10,
     embedding_provider: EmbeddingProvider | None = None,
+    embedding_model: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Vector search over memory_chunks.
+
+    Searches only chunks produced by the same embedding model as the query
+    embedding. This prevents mixed embedding spaces from polluting ranking.
 
     Lower cosine distance means stronger match.
     similarity_score is normalized as 1 - cosine_distance.
@@ -246,6 +253,7 @@ def semantic_search_memory(
     provider = embedding_provider or get_embedding_provider()
     query_embedding = provider.embed_text(query)
     query_vector = _to_vector_literal(query_embedding.vector)
+    target_embedding_model = embedding_model or query_embedding.model
 
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -275,6 +283,7 @@ def semantic_search_memory(
                     ON mi.id = mc.memory_item_id
                 WHERE mc.workspace_id = %s
                   AND mc.embedding IS NOT NULL
+                  AND mc.embedding_model = %s
                 ORDER BY mc.embedding <=> %s::vector
                 LIMIT %s;
                 """,
@@ -282,6 +291,7 @@ def semantic_search_memory(
                     query_vector,
                     query_vector,
                     str(workspace_id),
+                    target_embedding_model,
                     query_vector,
                     limit,
                 ),
