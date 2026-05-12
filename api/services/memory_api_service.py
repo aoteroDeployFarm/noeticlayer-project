@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -8,24 +10,25 @@ from api.schemas.memory import (
     RecentMemoryResponse,
     SemanticSearchResponse,
 )
+from api.utils.logging import get_logger
 from core.services.memory_service import (
     browse_recent,
     capture_memory,
     semantic_search_memory,
 )
 
+logger = get_logger(__name__)
+
 
 class MemoryAPIService:
     """
-    Thin API-facing service boundary.
-
-    This layer intentionally does not own chunking, embedding, persistence,
-    or vector ranking. Those remain in core.services.memory_service.
+    API-facing service boundary.
 
     Responsibilities:
     - API input normalization
     - API-safe error translation
     - response shaping
+    - production logging
     - future auth / async / MCP-compatible seam
     """
 
@@ -38,15 +41,34 @@ class MemoryAPIService:
                 raw_content=request.raw_content,
                 metadata=request.metadata,
             )
+
             return CaptureMemoryResponse(**result)
 
         except ValueError as exc:
+            logger.warning(
+                "Invalid memory capture request",
+                extra={
+                    "workspace_id": str(request.workspace_id),
+                    "memory_type": request.memory_type,
+                    "error": str(exc),
+                },
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
 
         except Exception as exc:
+            logger.exception(
+                "Failed to capture memory",
+                extra={
+                    "workspace_id": str(request.workspace_id),
+                    "memory_type": request.memory_type,
+                    "title": request.title,
+                },
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to capture memory.",
@@ -63,9 +85,18 @@ class MemoryAPIService:
                 workspace_id=workspace_id,
                 limit=limit,
             )
+
             return [RecentMemoryResponse(**row) for row in rows]
 
         except Exception as exc:
+            logger.exception(
+                "Failed to fetch recent memories",
+                extra={
+                    "workspace_id": workspace_id,
+                    "limit": limit,
+                },
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to fetch recent memories.",
@@ -86,15 +117,35 @@ class MemoryAPIService:
                 limit=limit,
                 embedding_model=embedding_model,
             )
+
             return [SemanticSearchResponse(**row) for row in rows]
 
         except ValueError as exc:
+            logger.warning(
+                "Invalid semantic search request",
+                extra={
+                    "workspace_id": workspace_id,
+                    "limit": limit,
+                    "embedding_model": embedding_model,
+                    "error": str(exc),
+                },
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
 
         except Exception as exc:
+            logger.exception(
+                "Failed to search memories",
+                extra={
+                    "workspace_id": workspace_id,
+                    "limit": limit,
+                    "embedding_model": embedding_model,
+                },
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to search memories.",
